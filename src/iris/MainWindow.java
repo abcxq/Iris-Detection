@@ -3,12 +3,15 @@ package iris;
 import java.awt.Dimension;
 import java.awt.Graphics2D;
 import java.awt.Image;
+//import java.awt.Point;
 import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
 
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
+import java.util.List;
+import java.util.Vector;
 import javax.imageio.ImageIO;
 
 import java.util.logging.Level;
@@ -17,10 +20,16 @@ import java.util.logging.Logger;
 import javax.swing.JFileChooser;
 import javax.swing.ImageIcon;
 import javax.swing.filechooser.FileNameExtensionFilter;
+//import static jdk.nashorn.internal.objects.NativeArray.reduce;
 
+import org.opencv.core.Core;
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
 import org.opencv.core.MatOfByte;
+import org.opencv.core.MatOfFloat;
+import org.opencv.core.MatOfInt;
+import org.opencv.core.Point;
+import org.opencv.core.Scalar;
 import org.opencv.core.Size;
 import org.opencv.imgcodecs.Imgcodecs;
 import org.opencv.imgproc.Imgproc;
@@ -218,10 +227,10 @@ public class MainWindow extends javax.swing.JFrame {
     private void Transform(java.awt.event.MouseEvent evt) {//GEN-FIRST:event_Transform
         BufferedImage img = (BufferedImage)((Image)((ImageIcon)jLabel1.getIcon()).getImage());
         Mat mimg = BufferedImageToMat(img);
-        
-        Mat dest = new Mat(mimg.rows(),mimg.cols(),mimg.type());
-        Imgproc.GaussianBlur(mimg, dest,new Size(5,5), 1);
-        
+               
+        Mat dest = new Mat(mimg.rows(),mimg.cols(),CvType.CV_8U);
+        dest = FindPupil(mimg);
+
         try {
             img = MatToBufferedImage(dest);
         } catch (Exception ex) {
@@ -230,6 +239,60 @@ public class MainWindow extends javax.swing.JFrame {
         jLabel2.setIcon(new ImageIcon(resize(img, jLabel2.getWidth(), jLabel2.getHeight())));
     }//GEN-LAST:event_Transform
 
+    public Mat FindPupil(Mat m)
+    {
+        Mat mnew = m.clone();
+        //grayscale
+        Imgproc.cvtColor(m, m, Imgproc.COLOR_BGR2GRAY);
+        
+        //find histogram
+        Mat hist = new Mat(1, 256, CvType.CV_8U);
+        Vector<Mat> m1 = new Vector<>();
+        Core.split(m, m1);
+        Imgproc.calcHist(m1, new MatOfInt(), new Mat(), hist, new MatOfInt(256), new MatOfFloat(0f, 256f));
+        
+        //smooth histogram and find its first peak
+        Size sz = new Size(15,15);
+        Imgproc.GaussianBlur(hist, hist, sz, NORMAL);
+        
+        //find min on histogram
+        int hmin = 5000;
+        for(int j=0;j<256;j++)
+            if(hist.get(j, 0)[0]<hmin) hmin = (int) hist.get(j, 0)[0];
+        
+        //find first peak on histogram for thresholding
+        int i=0;
+        for(i=2;i<255;i++)
+        {
+            if((hist.get(i+1, 0)[0]<hist.get(i, 0)[0])&&(hist.get(i, 0)[0]>80*hmin)) break;
+        }
+        //System.out.println("threshold "+i);
+        
+        //threshold by first peak index and smooth
+        Imgproc.threshold(m, m, (double)i, 255.0, Imgproc.THRESH_BINARY);
+        Imgproc.GaussianBlur(m, m, new Size(9,9), NORMAL);
+        
+        //fing hough circles anddraw first 3 on mnew
+        Mat circles = new Mat();
+        Imgproc.HoughCircles(m, circles, Imgproc.CV_HOUGH_GRADIENT, 1, 20, 15, 40, 10, 200);
+        //System.out.println("circles.cols() " + circles.cols());
+        if(circles.cols() > 0) {
+            for (int x = 0; x < circles.cols(); x++) {
+                if(x<3)
+                {
+                    double vCircle[] = circles.get(0, x);
+                    if(vCircle == null) {
+                        break;
+                    }
+                    Point pt = new Point(Math.round(vCircle[0]), Math.round(vCircle[1]));
+                    int radius = (int) Math.round(vCircle[2]);
+                    Imgproc.circle(mnew, pt, radius, new Scalar(0,255,0),2);
+                }
+            }
+        }       
+        return mnew;
+    }
+    
     /**
      * Function for conversion of opencv Mat image to BufferedImage
      * @param m Mat image to be converted
