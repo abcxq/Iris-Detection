@@ -3,14 +3,12 @@ package iris;
 import java.awt.Dimension;
 import java.awt.Graphics2D;
 import java.awt.Image;
-//import java.awt.Point;
 import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
 
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
-import java.util.List;
 import java.util.Vector;
 import javax.imageio.ImageIO;
 
@@ -20,7 +18,6 @@ import java.util.logging.Logger;
 import javax.swing.JFileChooser;
 import javax.swing.ImageIcon;
 import javax.swing.filechooser.FileNameExtensionFilter;
-//import static jdk.nashorn.internal.objects.NativeArray.reduce;
 
 import org.opencv.core.Core;
 import org.opencv.core.CvType;
@@ -230,6 +227,7 @@ public class MainWindow extends javax.swing.JFrame {
                
         Mat dest = new Mat(mimg.rows(),mimg.cols(),CvType.CV_8U);
         dest = FindPupil(mimg);
+        //dest = FindIris(mimg, dest);
 
         try {
             img = MatToBufferedImage(dest);
@@ -239,6 +237,29 @@ public class MainWindow extends javax.swing.JFrame {
         jLabel2.setIcon(new ImageIcon(resize(img, jLabel2.getWidth(), jLabel2.getHeight())));
     }//GEN-LAST:event_Transform
 
+    /**
+     * Function to detect contours of iris on image
+     * @param in Mat image on which to perform detection
+     * @param out Mat image on which to draw detected contours
+     * @return Mat image given as parameter out with iris contours drawn
+     */
+    public Mat FindIris(Mat in, Mat out)
+    {       
+//        int sum = 0;
+//        for(int i=0;i<in.rows();i++)
+//            for(int j=0;j<in.cols();j++)
+//                sum += in.get(i, j)[0];
+//        sum = sum/(in.rows()*in.cols());
+//        Imgproc.threshold(in, out, sum/0.92, 255.0, Imgproc.THRESH_BINARY);
+        
+        return out;
+    }
+    
+    /**
+     * Function to detect pupil on image
+     * @param m Mat image for detection
+     * @return Mat image as input one with drawn circles approximating pupil, can be 0-3 circles
+     */
     public Mat FindPupil(Mat m)
     {
         Mat mnew = m.clone();
@@ -266,31 +287,93 @@ public class MainWindow extends javax.swing.JFrame {
         {
             if((hist.get(i+1, 0)[0]<hist.get(i, 0)[0])&&(hist.get(i, 0)[0]>80*hmin)) break;
         }
-        //System.out.println("threshold "+i);
         
         //threshold by first peak index and smooth
         Imgproc.threshold(m, m, (double)i, 255.0, Imgproc.THRESH_BINARY);
         Imgproc.GaussianBlur(m, m, new Size(9,9), NORMAL);
         
-        //fing hough circles anddraw first 3 on mnew
-        Mat circles = new Mat();
-        Imgproc.HoughCircles(m, circles, Imgproc.CV_HOUGH_GRADIENT, 1, 20, 15, 40, 10, 200);
-        //System.out.println("circles.cols() " + circles.cols());
-        if(circles.cols() > 0) {
-            for (int x = 0; x < circles.cols(); x++) {
-                if(x<3)
+        //perform erosion and dilation
+        Mat elemente = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, new  Size(15, 15));
+        Mat elementd = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, new  Size(5, 5));
+        Imgproc.erode(m, m, elemente);
+        Imgproc.dilate(m, m, elementd);
+
+        //find projections
+        int[] vertp = new int[m.rows()];
+        int[] horp = new int[m.cols()];
+        for(i=0;i<m.rows();i++)
+            for(int j=0;j<m.cols();j++)
+            {
+                if(m.get(i, j)[0] == 0)
                 {
-                    double vCircle[] = circles.get(0, x);
-                    if(vCircle == null) {
-                        break;
-                    }
-                    Point pt = new Point(Math.round(vCircle[0]), Math.round(vCircle[1]));
-                    int radius = (int) Math.round(vCircle[2]);
-                    Imgproc.circle(mnew, pt, radius, new Scalar(0,255,0),2);
+                    vertp[i] += 1;
+                    horp[j] += 1;
                 }
             }
-        }       
+
+        //find indexes of max of projections, draw circle based on center given by maxes
+        int hmax = histmax(horp), vmax = histmax(vertp);
+        Point pt = new Point(hmax, vmax);
+        Imgproc.circle(mnew, pt, (findRadius(horp, hmax)+findRadius(vertp, vmax))/2, new Scalar(0,255,0),2);
+        
         return mnew;
+    }
+    
+    /**
+     * Finds radius on projection array with given center(index)
+     * @param h int[] h array, representing image projection, on which radius is to be found
+     * @param center integer representing center of prospecting center, is an index of array int[] h
+     * @return integer representing radius
+     */
+    public int findRadius(int[] h, int center)
+    {
+        int i = center;
+        while((i<h.length-1)&&(h[i]>h[center]/5)) i++;
+        int j = center;
+        while((j>=0)&&(h[j]>h[center]/5)) j--;
+        
+        return (i-j)/2;
+    }
+    
+    /**
+     * Function to find averaged position of maximal elements
+     * @param h input array for search
+     * @return integer representing index of array found as mean of 3 maximal peaks
+     */
+    public int histmax(int[] h)
+    {
+        int hmax1 = -1, hmax2 = -1, hmax3 = -1;
+        int imax1 = -1, imax2 = -1, imax3 = -1;
+        
+        for(int i=0;i<h.length;i++)
+        {
+            if(h[i]>hmax1)
+            {
+                hmax3 = hmax2;
+                imax3 = imax2;
+                
+                hmax2 = hmax1;
+                imax2 = imax1;
+                
+                hmax1 = h[i];
+                imax1 = i;
+            }
+            else if(h[i]>hmax2)
+            {
+                hmax3 = hmax2;
+                imax3 = imax2;
+                
+                hmax2 = h[i];
+                imax2 = i;
+            }
+            else if(h[i]>hmax3)
+            {
+                hmax3 = h[i];
+                imax3 = i;
+            }
+        }  
+        
+        return (imax1 + imax2 + imax3)/3;
     }
     
     /**
