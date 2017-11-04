@@ -224,10 +224,11 @@ public class MainWindow extends javax.swing.JFrame {
     private void Transform(java.awt.event.MouseEvent evt) {//GEN-FIRST:event_Transform
         BufferedImage img = (BufferedImage)((Image)((ImageIcon)jLabel1.getIcon()).getImage());
         Mat mimg = BufferedImageToMat(img);
+        Mat mimg1 = mimg.clone();
                
-        Mat dest = new Mat(mimg.rows(),mimg.cols(),CvType.CV_8U);
+        Mat dest;
         dest = FindPupil(mimg);
-        //dest = FindIris(mimg, dest);
+        dest = FindIris(mimg1, dest);
 
         try {
             img = MatToBufferedImage(dest);
@@ -244,14 +245,91 @@ public class MainWindow extends javax.swing.JFrame {
      * @return Mat image given as parameter out with iris contours drawn
      */
     public Mat FindIris(Mat in, Mat out)
-    {       
-//        int sum = 0;
-//        for(int i=0;i<in.rows();i++)
-//            for(int j=0;j<in.cols();j++)
-//                sum += in.get(i, j)[0];
-//        sum = sum/(in.rows()*in.cols());
-//        Imgproc.threshold(in, out, sum/0.92, 255.0, Imgproc.THRESH_BINARY);
+    {      
+        Imgproc.cvtColor(in, in, Imgproc.COLOR_BGR2GRAY);
+        Mat m = in.clone();
+        int max = -1, min = 10000;
+        for(int i=0;i<in.rows();i++)
+            for(int j=0;j<in.cols();j++)
+            {
+                if(in.get(i, j)[0]>max) max = (int) in.get(i, j)[0];
+                if(in.get(i, j)[0]<min) min = (int) in.get(i, j)[0];
+            }
+               
+        int threshold = (int) (0.5*(max+min)+0.5);
+        int thchange = 3;
         
+        while(thchange>1)
+        {
+            Imgproc.threshold(in, m, threshold, 255.0, Imgproc.THRESH_BINARY_INV);
+            
+            int g1 = 0, g2 = 0;
+            int num1 = 0, num2 = 0;
+            
+            for(int i=0;i<in.rows();i++)
+                for(int j=0;j<in.cols();j++)
+                {
+                    if(m.get(i, j)[0]==0)
+                    {
+                        g1 += in.get(i, j)[0];
+                        num1++;
+                    }
+                    if(m.get(i, j)[0]==1) 
+                    {
+                        g2 += in.get(i, j)[0];
+                        num2++;
+                    }
+                }
+            thchange = (int) (0.5 * (g1/num1 + g2/num2)) - threshold;
+            threshold = (int) (0.5 * (g1/num1 + g2/num2));
+        }   
+        
+        Imgproc.GaussianBlur(m, m, new Size(9,9), NORMAL);
+        
+        //perform erosion and dilation
+        Mat elemente = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, new  Size(13, 13));
+        Mat elementd = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, new  Size(9, 9));
+        Imgproc.erode(m, m, elemente);
+        Imgproc.dilate(m, m, elementd);
+        
+        //find projections
+        int[] vertp = new int[m.rows()];
+        int[] horp = new int[m.cols()];
+        for(int i=0;i<m.rows();i++)
+            for(int j=0;j<m.cols();j++)
+            {
+                if(m.get(i, j)[0] > 200)
+                {
+                    vertp[i] += 1;
+                    horp[j] += 1;
+                }
+            }
+        
+        //find diagonal projections
+        int[] diagp = new int[m.rows()*m.cols()];
+        int[] diagp1 = new int[m.rows()*m.cols()];
+        double constx = Math.sqrt(2)/2, consty = Math.sqrt(2)/2;
+        for(int i=0;i<m.rows();i++)
+            for(int j=0;j<m.cols();j++)
+            {
+                if(m.get(i, j)[0] > 200) 
+                {
+                    diagp[(int)(i*constx+j*consty)] += 1;
+                    diagp1[(int)(i*constx+j*consty*(-1)+m.width()*Math.sqrt(2)/2)] += 1;
+                }
+            }
+     
+        //find indexes of max of projections, draw circle based on center given by maxes
+        int hmax = histmax(horp), vmax = histmax(vertp);
+        int dmax = histmax(diagp), dmax1 = histmax(diagp1);
+        
+        double newx = (hmax + (m.height() - Math.sqrt(2)/2*dmax) + Math.sqrt(2)/2*dmax1)/3;
+        double newy = (vmax + Math.sqrt(2)/2*dmax + Math.sqrt(2)/2*dmax1)/3;
+        int rad = (findRadius(horp, hmax)+findRadius(vertp, vmax)+findRadius(diagp, dmax)+findRadius(diagp1, dmax1))/4;
+        
+        Point pt = new Point(newx, newy);
+        Imgproc.circle(out, pt, rad, new Scalar(255,0,0),2);    
+
         return out;
     }
     
@@ -312,7 +390,8 @@ public class MainWindow extends javax.swing.JFrame {
             }
 
         //find indexes of max of projections, draw circle based on center given by maxes
-        int hmax = histmax(horp), vmax = histmax(vertp);
+        int hmax = histmax(horp), vmax = histmax(vertp); 
+        
         Point pt = new Point(hmax, vmax);
         Imgproc.circle(mnew, pt, (findRadius(horp, hmax)+findRadius(vertp, vmax))/2, new Scalar(0,255,0),2);
         
@@ -383,11 +462,21 @@ public class MainWindow extends javax.swing.JFrame {
      * @throws Exception 
      */
     public static BufferedImage MatToBufferedImage(Mat m)throws Exception {        
-        MatOfByte mob=new MatOfByte();
+        MatOfByte mob = new MatOfByte();
         Imgcodecs.imencode(".jpg", m, mob);
-        byte ba[]=mob.toArray();
-        BufferedImage bi=ImageIO.read(new ByteArrayInputStream(ba));
+        byte ba[] = mob.toArray();
+        BufferedImage bi = ImageIO.read(new ByteArrayInputStream(ba));
         return bi;
+
+//        int width = m.width(), height = m.height(), channels = m.channels() ;  
+//        byte[] sourcePixels = new byte[width * height * channels];  
+//        m.get(0, 0, sourcePixels);  
+//        // create new image and get reference to backing data  
+//        BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_3BYTE_BGR);  
+//        final byte[] targetPixels = ((DataBufferByte) image.getRaster().getDataBuffer()).getData();  
+//        System.arraycopy(sourcePixels, 0, targetPixels, 0, sourcePixels.length); 
+//        
+//        return image;
     } 
     
     /**
