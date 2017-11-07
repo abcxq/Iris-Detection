@@ -9,7 +9,6 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
-import java.util.Vector;
 import javax.imageio.ImageIO;
 
 import java.util.logging.Level;
@@ -19,12 +18,9 @@ import javax.swing.JFileChooser;
 import javax.swing.ImageIcon;
 import javax.swing.filechooser.FileNameExtensionFilter;
 
-import org.opencv.core.Core;
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
 import org.opencv.core.MatOfByte;
-import org.opencv.core.MatOfFloat;
-import org.opencv.core.MatOfInt;
 import org.opencv.core.Point;
 import org.opencv.core.Scalar;
 import org.opencv.core.Size;
@@ -173,15 +169,15 @@ public class MainWindow extends javax.swing.JFrame {
     private void BrowseClick(java.awt.event.MouseEvent evt) {//GEN-FIRST:event_BrowseClick
         JFileChooser fileChooser = new JFileChooser();
         fileChooser.setPreferredSize(new Dimension(500, 400));
-        fileChooser.setFileFilter(new FileNameExtensionFilter("Image Files", "jpg", "png", "gif", "jpeg"));
+        fileChooser.setFileFilter(new FileNameExtensionFilter("Image Files", "jpg", "png", "gif", "jpeg", "bmp"));
         if (fileChooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
             File file = fileChooser.getSelectedFile();
             try {
-                // What to do with the file, e.g. display it in a TextArea
                 Image picture = ImageIO.read(new File( file.getAbsolutePath()));
+                if(jLabel1.getIcon() != null) jLabel1.setIcon(null);
                 jLabel1.setIcon(new ImageIcon(resize((BufferedImage)picture, jLabel1.getWidth(), jLabel1.getHeight())));
             } catch (IOException ex) {
-                System.out.println("problem accessing file"+file.getAbsolutePath());
+                System.out.println("Problem accessing file"+file.getAbsolutePath());
             }
             } else {
                 System.out.println("File access cancelled by user.");
@@ -195,7 +191,7 @@ public class MainWindow extends javax.swing.JFrame {
     private void SaveClick(java.awt.event.MouseEvent evt) {//GEN-FIRST:event_SaveClick
         JFileChooser fileChooser = new JFileChooser();
         fileChooser.setPreferredSize(new Dimension(500, 400));
-        fileChooser.setFileFilter(new FileNameExtensionFilter("Image Files", "jpg", "png", "gif", "jpeg"));
+        fileChooser.setFileFilter(new FileNameExtensionFilter("Image Files", "jpg", "png", "gif", "jpeg", "bmp"));
         if (fileChooser.showSaveDialog(this) == JFileChooser.APPROVE_OPTION) {
             File file = fileChooser.getSelectedFile();
             if (!file.exists()) {
@@ -226,7 +222,7 @@ public class MainWindow extends javax.swing.JFrame {
         Mat mimg = BufferedImageToMat(img);
         Mat mimg1 = mimg.clone();
                
-        Mat dest;
+        Mat dest = new Mat();
         dest = FindPupil(mimg);
         dest = FindIris(mimg1, dest);
 
@@ -236,10 +232,14 @@ public class MainWindow extends javax.swing.JFrame {
             Logger.getLogger(MainWindow.class.getName()).log(Level.SEVERE, null, ex);
         }
         jLabel2.setIcon(new ImageIcon(resize(img, jLabel2.getWidth(), jLabel2.getHeight())));
+        
+        dest.release();
+        mimg.release();
+        mimg1.release();
     }//GEN-LAST:event_Transform
 
     /**
-     * Function to detect contours of iris on image
+     * Function to detect and draw contours of iris on image
      * @param in Mat image on which to perform detection
      * @param out Mat image on which to draw detected contours
      * @return Mat image given as parameter out with iris contours drawn
@@ -248,33 +248,34 @@ public class MainWindow extends javax.swing.JFrame {
     {      
         Imgproc.cvtColor(in, in, Imgproc.COLOR_BGR2GRAY);
         Mat m = in.clone();
+        
+        //adaptive thresholding
         int max = -1, min = 10000;
-        for(int i=0;i<in.rows();i++)
-            for(int j=0;j<in.cols();j++)
+        for(int i=0;i < in.rows();i++)
+            for(int j=0; j < in.cols(); j++)
             {
-                if(in.get(i, j)[0]>max) max = (int) in.get(i, j)[0];
-                if(in.get(i, j)[0]<min) min = (int) in.get(i, j)[0];
-            }
-               
-        int threshold = (int) (0.5*(max+min)+0.5);
+                if(in.get(i, j)[0] > max) max = (int) in.get(i, j)[0];
+                if(in.get(i, j)[0] < min) min = (int) in.get(i, j)[0];
+            }              
+        int threshold = (int) (0.5 * (max + min) + 0.5);
         int thchange = 3;
         
-        while(thchange>1)
+        while(thchange > 1)
         {
             Imgproc.threshold(in, m, threshold, 255.0, Imgproc.THRESH_BINARY_INV);
             
             int g1 = 0, g2 = 0;
             int num1 = 0, num2 = 0;
             
-            for(int i=0;i<in.rows();i++)
-                for(int j=0;j<in.cols();j++)
+            for(int i=0; i < in.rows(); i++)
+                for(int j=0; j < in.cols(); j++)
                 {
-                    if(m.get(i, j)[0]==0)
+                    if(m.get(i, j)[0] == 0)
                     {
                         g1 += in.get(i, j)[0];
                         num1++;
                     }
-                    if(m.get(i, j)[0]==1) 
+                    if(m.get(i, j)[0] == 1) 
                     {
                         g2 += in.get(i, j)[0];
                         num2++;
@@ -284,19 +285,20 @@ public class MainWindow extends javax.swing.JFrame {
             threshold = (int) (0.5 * (g1/num1 + g2/num2));
         }   
         
-        Imgproc.GaussianBlur(m, m, new Size(9,9), NORMAL);
+        System.out.println(m==null);
+        Imgproc.GaussianBlur(m, m, new Size(9, 9), NORMAL);
         
         //perform erosion and dilation
-        Mat elemente = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, new  Size(13, 13));
-        Mat elementd = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, new  Size(9, 9));
+        Mat elemente = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, new  Size(7, 7));
+        Mat elementd = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, new  Size(3, 3));
         Imgproc.erode(m, m, elemente);
         Imgproc.dilate(m, m, elementd);
         
         //find projections
         int[] vertp = new int[m.rows()];
         int[] horp = new int[m.cols()];
-        for(int i=0;i<m.rows();i++)
-            for(int j=0;j<m.cols();j++)
+        for(int i=0; i < m.rows(); i++)
+            for(int j=0; j < m.cols(); j++)
             {
                 if(m.get(i, j)[0] > 200)
                 {
@@ -306,16 +308,16 @@ public class MainWindow extends javax.swing.JFrame {
             }
         
         //find diagonal projections
-        int[] diagp = new int[m.rows()*m.cols()];
-        int[] diagp1 = new int[m.rows()*m.cols()];
+        int[] diagp = new int[m.rows() * m.cols()];
+        int[] diagp1 = new int[m.rows() * m.cols()];
         double constx = Math.sqrt(2)/2, consty = Math.sqrt(2)/2;
-        for(int i=0;i<m.rows();i++)
-            for(int j=0;j<m.cols();j++)
+        for(int i=0; i < m.rows(); i++)
+            for(int j=0; j < m.cols(); j++)
             {
                 if(m.get(i, j)[0] > 200) 
                 {
-                    diagp[(int)(i*constx+j*consty)] += 1;
-                    diagp1[(int)(i*constx+j*consty*(-1)+m.width()*Math.sqrt(2)/2)] += 1;
+                    diagp[(int)(i * constx + j * consty)] += 1;
+                    diagp1[(int)(i * constx + j * consty * (-1) + m.width() * Math.sqrt(2)/2)] += 1;
                 }
             }
      
@@ -323,64 +325,38 @@ public class MainWindow extends javax.swing.JFrame {
         int hmax = histmax(horp), vmax = histmax(vertp);
         int dmax = histmax(diagp), dmax1 = histmax(diagp1);
         
-        double newx = (hmax + (m.height() - Math.sqrt(2)/2*dmax) + Math.sqrt(2)/2*dmax1)/3;
-        double newy = (vmax + Math.sqrt(2)/2*dmax + Math.sqrt(2)/2*dmax1)/3;
-        int rad = (findRadius(horp, hmax)+findRadius(vertp, vmax)+findRadius(diagp, dmax)+findRadius(diagp1, dmax1))/4;
+        double newx = hmax;
+        double newy = vmax;
+        int rad = (findRadius(horp, hmax) + findRadius(vertp, vmax) + findRadius(diagp, dmax) + findRadius(diagp1, dmax1))/4;
         
         Point pt = new Point(newx, newy);
-        Imgproc.circle(out, pt, rad, new Scalar(255,0,0),2);    
+        Imgproc.circle(out, pt, rad, new Scalar(255, 0, 0), 2);    
 
         return out;
     }
     
     /**
-     * Function to detect pupil on image
+     * Function to detect and draw pupil on image
      * @param m Mat image for detection
-     * @return Mat image as input one with drawn circles approximating pupil, can be 0-3 circles
+     * @return Mat image as input one with drawn pupil circle
      */
     public Mat FindPupil(Mat m)
     {
         Mat mnew = m.clone();
-        //grayscale
-        Imgproc.cvtColor(m, m, Imgproc.COLOR_BGR2GRAY);
         
-        //find histogram
-        Mat hist = new Mat(1, 256, CvType.CV_8U);
-        Vector<Mat> m1 = new Vector<>();
-        Core.split(m, m1);
-        Imgproc.calcHist(m1, new MatOfInt(), new Mat(), hist, new MatOfInt(256), new MatOfFloat(0f, 256f));
-        
-        //smooth histogram and find its first peak
-        Size sz = new Size(15,15);
-        Imgproc.GaussianBlur(hist, hist, sz, NORMAL);
-        
-        //find min on histogram
-        int hmin = 5000;
-        for(int j=0;j<256;j++)
-            if(hist.get(j, 0)[0]<hmin) hmin = (int) hist.get(j, 0)[0];
-        
-        //find first peak on histogram for thresholding
-        int i=0;
-        for(i=2;i<255;i++)
-        {
-            if((hist.get(i+1, 0)[0]<hist.get(i, 0)[0])&&(hist.get(i, 0)[0]>80*hmin)) break;
-        }
-        
-        //threshold by first peak index and smooth
-        Imgproc.threshold(m, m, (double)i, 255.0, Imgproc.THRESH_BINARY);
-        Imgproc.GaussianBlur(m, m, new Size(9,9), NORMAL);
+        //grayscale and threshold
+        Imgproc.cvtColor(m, m, Imgproc.COLOR_BGR2GRAY);       
+        Imgproc.threshold(m, m, 50, 255, Imgproc.THRESH_BINARY);
         
         //perform erosion and dilation
-        Mat elemente = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, new  Size(15, 15));
-        Mat elementd = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, new  Size(5, 5));
-        Imgproc.erode(m, m, elemente);
-        Imgproc.dilate(m, m, elementd);
-
+        Imgproc.erode(m, m, Imgproc.getStructuringElement(Imgproc.MORPH_RECT, new  Size(3, 3)));
+        Imgproc.dilate(m, m, Imgproc.getStructuringElement(Imgproc.MORPH_RECT, new  Size(6, 6)));
+        
         //find projections
         int[] vertp = new int[m.rows()];
         int[] horp = new int[m.cols()];
-        for(i=0;i<m.rows();i++)
-            for(int j=0;j<m.cols();j++)
+        for(int i=0; i < m.rows(); i++)
+            for(int j=0; j < m.cols(); j++)
             {
                 if(m.get(i, j)[0] == 0)
                 {
@@ -388,12 +364,16 @@ public class MainWindow extends javax.swing.JFrame {
                     horp[j] += 1;
                 }
             }
-
+     
         //find indexes of max of projections, draw circle based on center given by maxes
-        int hmax = histmax(horp), vmax = histmax(vertp); 
+        int hmax = histmax(horp), vmax = histmax(vertp);
         
-        Point pt = new Point(hmax, vmax);
-        Imgproc.circle(mnew, pt, (findRadius(horp, hmax)+findRadius(vertp, vmax))/2, new Scalar(0,255,0),2);
+        double newx = hmax;
+        double newy = vmax;
+        int rad = (findRadius(horp, hmax) + findRadius(vertp, vmax))/2;
+        
+        Point pt = new Point(newx, newy);
+        Imgproc.circle(mnew, pt, rad, new Scalar(0, 255, 0), 2);  
         
         return mnew;
     }
@@ -407,11 +387,11 @@ public class MainWindow extends javax.swing.JFrame {
     public int findRadius(int[] h, int center)
     {
         int i = center;
-        while((i<h.length-1)&&(h[i]>h[center]/5)) i++;
+        while((i < h.length-1) && (h[i] > h[center]/5)) i++;
         int j = center;
-        while((j>=0)&&(h[j]>h[center]/5)) j--;
+        while((j >= 0) && (h[j] > h[center]/5)) j--;
         
-        return (i-j)/2;
+        return (i - j)/2;
     }
     
     /**
@@ -424,9 +404,9 @@ public class MainWindow extends javax.swing.JFrame {
         int hmax1 = -1, hmax2 = -1, hmax3 = -1;
         int imax1 = -1, imax2 = -1, imax3 = -1;
         
-        for(int i=0;i<h.length;i++)
+        for(int i=0; i < h.length; i++)
         {
-            if(h[i]>hmax1)
+            if(h[i] > hmax1)
             {
                 hmax3 = hmax2;
                 imax3 = imax2;
@@ -437,7 +417,7 @@ public class MainWindow extends javax.swing.JFrame {
                 hmax1 = h[i];
                 imax1 = i;
             }
-            else if(h[i]>hmax2)
+            else if(h[i] > hmax2)
             {
                 hmax3 = hmax2;
                 imax3 = imax2;
@@ -445,7 +425,7 @@ public class MainWindow extends javax.swing.JFrame {
                 hmax2 = h[i];
                 imax2 = i;
             }
-            else if(h[i]>hmax3)
+            else if(h[i] > hmax3)
             {
                 hmax3 = h[i];
                 imax3 = i;
@@ -467,16 +447,6 @@ public class MainWindow extends javax.swing.JFrame {
         byte ba[] = mob.toArray();
         BufferedImage bi = ImageIO.read(new ByteArrayInputStream(ba));
         return bi;
-
-//        int width = m.width(), height = m.height(), channels = m.channels() ;  
-//        byte[] sourcePixels = new byte[width * height * channels];  
-//        m.get(0, 0, sourcePixels);  
-//        // create new image and get reference to backing data  
-//        BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_3BYTE_BGR);  
-//        final byte[] targetPixels = ((DataBufferByte) image.getRaster().getDataBuffer()).getData();  
-//        System.arraycopy(sourcePixels, 0, targetPixels, 0, sourcePixels.length); 
-//        
-//        return image;
     } 
     
     /**
