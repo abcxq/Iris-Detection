@@ -1,5 +1,5 @@
 # Iris-Detection
-Java desktop application for detection and localization of iris and pupil on an image.
+Java desktop application for detection and localization of iris and pupil on an image. Uses OpenCV library.
 
 Application allows to open image file from user's directories, and later to save processed image.
 
