@@ -1,5 +1,6 @@
 package iris;
 
+import org.opencv.core.Core;
 import org.opencv.core.Mat;
 import org.opencv.core.Point;
 import org.opencv.core.Scalar;
@@ -13,6 +14,10 @@ import org.opencv.imgproc.Imgproc;
 public class Detection {
     public Detection(){}
     
+    public Point PupilCenter = new Point();
+    public Point IrisCenter = new Point();
+    public int PupilRad = 0;
+    public int IrisRad = 0;
     /**
      * Function to detect and draw contours of iris on image
      * @param in Mat image on which to perform detection
@@ -101,10 +106,10 @@ public class Detection {
         
         double newx = hmax;
         double newy = vmax;
-        int rad = (FindRadius(horp, hmax) + FindRadius(vertp, vmax) + FindRadius(diagp, dmax) + FindRadius(diagp1, dmax1))/4;
+        IrisRad = (FindRadius(horp, hmax) + FindRadius(vertp, vmax) + FindRadius(diagp, dmax) + FindRadius(diagp1, dmax1))/4;
         
-        Point pt = new Point(newx, newy);
-        Imgproc.circle(out, pt, rad, new Scalar(255, 0, 0), 2);    
+        IrisCenter = new Point(newx, newy);
+        Imgproc.circle(out, IrisCenter, IrisRad, new Scalar(255, 0, 0), 2);    
 
         return out;
     }
@@ -144,10 +149,10 @@ public class Detection {
         
         double newx = hmax;
         double newy = vmax;
-        int rad = (FindRadius(horp, hmax) + FindRadius(vertp, vmax))/2;
+        PupilRad = (FindRadius(horp, hmax) + FindRadius(vertp, vmax))/2;
         
-        Point pt = new Point(newx, newy);
-        Imgproc.circle(mnew, pt, rad, new Scalar(0, 255, 0), 2);  
+        PupilCenter = new Point(newx, newy);
+        Imgproc.circle(mnew, PupilCenter, PupilRad, new Scalar(0, 255, 0), 2);  
         
         return mnew;
     }
@@ -207,5 +212,30 @@ public class Detection {
         }  
         
         return (imax1 + imax2 + imax3)/3;
+    }
+    
+    /**
+     * Removes previously detected pupil by making in white
+     * @param m Mat image on which to operate
+     * @return Mat - image without pupil
+     */
+    public Mat RemovePupil(Mat m)
+    {
+        Imgproc.circle(m, PupilCenter, PupilRad, new Scalar(255, 255, 255), -1);
+        return m;
+    }
+    
+    /**
+     * Turns iris region to rectangle
+     * @param m Mat image containing previously detected iris
+     * @return mat of rectangle form of iris
+     */
+    public Mat IrisToPolar(Mat m)
+    {
+        Mat dest = new Mat();
+        Imgproc.linearPolar(m, dest, IrisCenter, IrisRad, Imgproc.CV_WARP_FILL_OUTLIERS);
+
+        Core.rotate(dest, dest, Core.ROTATE_90_CLOCKWISE);
+        return dest;
     }
 }
